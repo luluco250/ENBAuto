@@ -19,20 +19,29 @@ enum BeepType {
 
 //globals
 wstring dir;
-HWND hwnd_injector;
+wstring cmdline;
 
 //prototypes
 void DoBeep(BeepType bt);
 void CreateINI();
-wstring s2ws(const string& s); //fuck wstrings, fuck unicode, fuck everything
-wstring GetDir(); //absolutely fuck LPWSTR, fucking worst type ever
+wstring s2ws(const string& s); //fuck wstrings
+wstring GetDir(); //tfw this could be much easier
 void NotepadTest();
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam);
 
-//fuck unicode
+struct EnumWindowsInfo { //struct for use with the enumwindowsproc callback
+	DWORD id;
+	HWND hwnd;
+	EnumWindowsInfo(DWORD const ProcessID) : id(ProcessID) {}
+};
 
 BOOL WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-	dir = GetDir();
+	cmdline = pCmdLine; //get command line
+	dir = GetDir(); //get the directory in which ENBAuto is located
+
+	//NotepadTest(); //for testing functionality
+	//return false;  //using notepad
+	
 	INIReader ini_config(_ININAME_);
 
 	if (ini_config.ParseError() < 0) {
@@ -54,8 +63,8 @@ BOOL WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLin
 	injectorinfo.nShow = SW_SHOWNORMAL;
 	if (ShellExecuteEx(&injectorinfo)) {
 		WaitForInputIdle(injectorinfo.hProcess, INFINITE); //wait for program to stabilize
-		DWORD id_injector = GetProcessId(injectorinfo.hProcess);
-		EnumWindows(&EnumWindowsProc, id_injector);
+		EnumWindowsInfo inject_winfo = EnumWindowsInfo(GetProcessId(injectorinfo.hProcess));
+		EnumWindows(&EnumWindowsProc, reinterpret_cast<LPARAM>(&inject_winfo));
 
 		wstring file_exe = s2ws(ini_config.Get("", "ExeName", _DEFAULTEXE_));
 		SHELLEXECUTEINFO exeinfo;
@@ -64,28 +73,48 @@ BOOL WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLin
 		exeinfo.fMask = SEE_MASK_NOCLOSEPROCESS;
 		exeinfo.lpVerb = L"open";
 		exeinfo.lpFile = file_exe.c_str();
+		exeinfo.lpParameters = cmdline.c_str();
 		exeinfo.nShow = SW_SHOWNORMAL;
 		if (ShellExecuteEx(&exeinfo)) {//run game executable and wait
-			WaitForInputIdle(exeinfo.hProcess, INFINITE);
-			WaitForSingleObject(exeinfo.hProcess, INFINITE);
+			WaitForSingleObject(exeinfo.hProcess, INFINITE); //this waits until the program process is terminated
 		}
 		//after the game executable's process has ended...
-		PostMessage(hwnd_injector, WM_CLOSE, NULL, NULL);
+		PostMessage(inject_winfo.hwnd, WM_CLOSE, NULL, NULL);
 	}
 	return false; //end program
 }
 
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+	EnumWindowsInfo *info = reinterpret_cast<EnumWindowsInfo*>(lParam);
 	DWORD id;
 	GetWindowThreadProcessId(hwnd, &id);
-	if (id == lParam) {
-		hwnd_injector = hwnd;
+	if (info->id == id) { //if this process' id equals the id provided by the info
+		info->hwnd = hwnd;
 		return FALSE;
 	}
 	else return TRUE;
 }
 
-void DoBeep(BeepType bt) {
+void NotepadTest() { //this is a function to test functionalities using notepad
+	SHELLEXECUTEINFO notepadinfo;
+	ZeroMemory(&notepadinfo, sizeof(SHELLEXECUTEINFO));
+	notepadinfo.cbSize = sizeof(SHELLEXECUTEINFO);
+	notepadinfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+	notepadinfo.lpVerb = L"open";
+	notepadinfo.lpFile = L"C:\\Windows\\system32\\notepad.exe";
+	//notepadinfo.lpParameters = L"C:\\Users\\Lucas\\Documents\\test.txt";
+	notepadinfo.lpParameters = cmdline.c_str(); //test command line arguments/parameters
+	notepadinfo.nShow = SW_SHOWNORMAL;
+	if (ShellExecuteEx(&notepadinfo)) {
+		WaitForInputIdle(notepadinfo.hProcess, INFINITE);
+		EnumWindowsInfo info = EnumWindowsInfo(GetProcessId(notepadinfo.hProcess));
+		EnumWindows(&EnumWindowsProc, reinterpret_cast<LPARAM>(&info));
+		//DoBeep(BeepClose);
+		//PostMessage(info.hwnd, WM_CLOSE, NULL, NULL);
+	}
+}
+
+void DoBeep(BeepType bt) { //feedback beeps
 	switch (bt) {
 		case BeepInit:
 			Beep(400, 100);
