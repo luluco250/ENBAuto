@@ -1,10 +1,7 @@
 #include <Windows.h>
-#include <tchar.h>
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <sstream>
-#include <vector>
 #include "INIReader.h"
 using namespace std;
 
