@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <vector>
 #include "INIReader.h"
 using namespace std;
 
@@ -31,11 +32,12 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam);
 
 struct EnumWindowsInfo { //struct for use with the enumwindowsproc callback
 	DWORD id;
-	HWND hwnd;
+	vector<HWND> hwnds;
 	EnumWindowsInfo(DWORD const ProcessID) : id(ProcessID) {}
 };
 
 BOOL WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+	
 	cmdline = pCmdLine; //get command line
 	dir = GetDir(); //get the directory in which ENBAuto is located
 
@@ -43,12 +45,15 @@ BOOL WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLin
 	//return false;  //using notepad
 	
 	INIReader ini_config(_ININAME_);
-
-	if (ini_config.ParseError() < 0) {
+	if (ini_config.ParseError() < 0) {	//if the configuration file does not exist...
 		DoBeep(BeepError);
-		CreateINI();
+		CreateINI();					//...then let's create another one!
 		return true;
 	}
+
+	string _cmdline = ini_config.Get("", "CommandLine", "");
+	//if a command line is set in the configuration file, ignore passed command line and use it instead for passthrough
+	cmdline = _cmdline != "" ? s2ws(_cmdline) : cmdline;
 
 	if (ini_config.GetBoolean("", "DoBeep", true)) 
 		DoBeep(BeepInit); //do initialization beep so the user know ENBAuto has loaded correctly
@@ -79,7 +84,9 @@ BOOL WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLin
 			WaitForSingleObject(exeinfo.hProcess, INFINITE); //this waits until the program process is terminated
 		}
 		//after the game executable's process has ended...
-		PostMessage(inject_winfo.hwnd, WM_CLOSE, NULL, NULL);
+		for (unsigned int i = 0; i < inject_winfo.hwnds.size(); ++i) {	//for each window found with the same process id...
+			PostMessage(inject_winfo.hwnds[i], WM_CLOSE, NULL, NULL);	//...send close message!
+		}
 	}
 	return false; //end program
 }
@@ -89,7 +96,7 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 	DWORD id;
 	GetWindowThreadProcessId(hwnd, &id);
 	if (info->id == id) { //if this process' id equals the id provided by the info
-		info->hwnd = hwnd;
+		info->hwnds.push_back(hwnd);
 		return FALSE;
 	}
 	else return TRUE;
@@ -109,8 +116,10 @@ void NotepadTest() { //this is a function to test functionalities using notepad
 		WaitForInputIdle(notepadinfo.hProcess, INFINITE);
 		EnumWindowsInfo info = EnumWindowsInfo(GetProcessId(notepadinfo.hProcess));
 		EnumWindows(&EnumWindowsProc, reinterpret_cast<LPARAM>(&info));
-		//DoBeep(BeepClose);
-		//PostMessage(info.hwnd, WM_CLOSE, NULL, NULL);
+		DoBeep(BeepClose);
+		for (unsigned int i = 0; i < info.hwnds.size(); ++i) {	//for each window found with the same process id...
+			PostMessage(info.hwnds[i], WM_CLOSE, NULL, NULL);	//...send close message!
+		}
 	}
 }
 
@@ -147,6 +156,7 @@ void CreateINI() {
 		<< "ExeName=" << _DEFAULTEXE_ << "\n"
 		<< "InjectorName=" << _DEFAULTINJECTOR_ << "\n"
 		<< "DoBeep=true\n"
+		<< "CommandLine= ;Leave blank to automatically pass through the command line given to ENBAuto to the game executable\n"
 		<< flush; //force file to be written before closing the program
 	ini.close();
 	MessageBox( //show popup telling a new file was created
